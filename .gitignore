@@ -3,3 +3,10 @@ __pycache__/
 *.pyc
 .env
 data/synthetic/
+
+# Member 4 additions
+.pytest_cache/
+mlruns/
+*.db
+venv/
+models/*.joblib
