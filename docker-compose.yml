@@ -36,5 +36,45 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  feature_service:
+    # Member 3
+    build:
+      context: .
+      dockerfile: apps/feature_service/Dockerfile
+    ports:
+      - "8003:8000"
+
+  model_service:
+    # Member 4
+    build:
+      context: .
+      dockerfile: apps/model_service/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MEMBER3_FEATURE_SERVICE_URL=http://feature_service:8000
+    depends_on:
+      - feature_service
+
+  risk_service:
+    # Member 5
+    build:
+      context: .
+      dockerfile: apps/risk_service/Dockerfile
+    ports:
+      - "8005:8000"
+    environment:
+      - FEATURE_SERVICE_URL=http://feature_service:8000
+      - MODEL_SERVICE_URL=http://model_service:8000
+      - POLICY_VERSION=v1
+    depends_on:
+      - feature_service
+      - model_service
+
 volumes:
   postgres_data:

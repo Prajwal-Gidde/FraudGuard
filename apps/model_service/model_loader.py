@@ -5,10 +5,12 @@ import joblib
 import mlflow
 import mlflow.sklearn
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Configure MLflow SQLite tracking backend matching train.py
-DB_PATH = "sqlite:///mlflow.db"
+DB_PATH = "sqlite:///" + os.path.join(BASE_DIR, "mlflow.db").replace("\\", "/")
 MODEL_REGISTRY_URI = "models:/fraudguard360-detector/Staging"
-LOCAL_FALLBACK_PATH = "models/best_model.joblib"
+LOCAL_FALLBACK_PATH = os.path.join(BASE_DIR, "models", "best_model.joblib")
 
 # Set module-level tracking URI
 mlflow.set_tracking_uri(DB_PATH)
