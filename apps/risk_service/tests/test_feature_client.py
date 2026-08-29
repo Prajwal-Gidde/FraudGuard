@@ -83,7 +83,7 @@ async def test_extracts_feature_schema_version(settings, tx):
 @pytest.mark.asyncio
 async def test_raises_feature_service_error_on_500(settings, tx):
     with respx.mock() as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(500))
+        mock.post(M3_EXTRACT_URL).respond(500)
         with pytest.raises(FeatureServiceError) as exc_info:
             await extract(tx, settings)
         assert exc_info.value.code == "FEATURE_SERVICE_ERROR"

@@ -22,8 +22,8 @@ M4_HEALTH = f"{M4_BASE}/api/v1/health"
 
 def test_health_all_ok(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.get(M3_HEALTH).mock(return_value=httpx.Response(200))
-        mock.get(M4_HEALTH).mock(return_value=httpx.Response(200))
+        mock.get(M3_HEALTH).respond(200)
+        mock.get(M4_HEALTH).respond(200)
         
         response = test_client.get("/api/v1/health")
         assert response.status_code == 200
@@ -37,8 +37,8 @@ def test_health_all_ok(test_client):
 
 def test_health_m3_down(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.get(M3_HEALTH).mock(return_value=httpx.Response(500))
-        mock.get(M4_HEALTH).mock(return_value=httpx.Response(200))
+        mock.get(M3_HEALTH).respond(500)
+        mock.get(M4_HEALTH).respond(200)
         
         response = test_client.get("/api/v1/health")
         assert response.status_code == 200
@@ -50,8 +50,8 @@ def test_health_m3_down(test_client):
 
 def test_health_m4_down(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.get(M3_HEALTH).mock(return_value=httpx.Response(200))
-        mock.get(M4_HEALTH).mock(return_value=httpx.Response(500))
+        mock.get(M3_HEALTH).respond(200)
+        mock.get(M4_HEALTH).respond(500)
         
         response = test_client.get("/api/v1/health")
         assert response.status_code == 200
@@ -63,8 +63,8 @@ def test_health_m4_down(test_client):
 
 def test_health_includes_versions(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.get(M3_HEALTH).mock(return_value=httpx.Response(200))
-        mock.get(M4_HEALTH).mock(return_value=httpx.Response(200))
+        mock.get(M3_HEALTH).respond(200)
+        mock.get(M4_HEALTH).respond(200)
         
         response = test_client.get("/api/v1/health")
         data = response.json()["data"]
@@ -77,8 +77,8 @@ def test_health_includes_versions(test_client):
 def test_health_degraded_when_model_unknown(degraded_client):
     """⭐ Tests degraded metadata status when M4 was down at startup."""
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.get(M3_HEALTH).mock(return_value=httpx.Response(200))
-        mock.get(M4_HEALTH).mock(return_value=httpx.Response(200))
+        mock.get(M3_HEALTH).respond(200)
+        mock.get(M4_HEALTH).respond(200)
         
         response = degraded_client.get("/api/v1/health")
         data = response.json()["data"]
@@ -92,15 +92,15 @@ def test_health_recovered_when_metadata_restored(degraded_client):
     """⭐ Tests live recovery of model version via /risk/score endpoint."""
     with respx.mock(assert_all_mocked=False) as mock:
         # First, ensure we start degraded
-        mock.get(M3_HEALTH).mock(return_value=httpx.Response(200))
-        mock.get(M4_HEALTH).mock(return_value=httpx.Response(200))
+        mock.get(M3_HEALTH).respond(200)
+        mock.get(M4_HEALTH).respond(200)
         
         res_initial = degraded_client.get("/api/v1/health")
         assert res_initial.json()["data"]["metadata_status"] == "degraded"
         
         # Now make a successful predict call
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_HIGH))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=M4_RESPONSE_HIGH))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_HIGH)
+        mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_HIGH)
         
         score_res = degraded_client.post("/api/v1/risk/score", json=make_envelope(SAMPLE_TRANSACTION))
         assert score_res.status_code == 200

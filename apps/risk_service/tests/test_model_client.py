@@ -137,7 +137,7 @@ async def test_parses_flat_predict_response(settings):
 @pytest.mark.asyncio
 async def test_raises_on_m4_500(settings):
     with respx.mock() as mock:
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(500))
+        mock.post(M4_PREDICT_URL).respond(500)
         with pytest.raises(ModelServiceError) as exc_info:
             await predict(SAMPLE_FEATURES, settings)
         assert exc_info.value.code in ("MODEL_SERVICE_UNAVAILABLE", "MODEL_SERVICE_CLIENT_ERROR")
@@ -147,7 +147,7 @@ async def test_raises_on_m4_500(settings):
 async def test_raises_on_m4_422_immediately(settings):
     """422 is a client error — raise immediately, never retry."""
     with respx.mock() as mock:
-        route = mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(422, json={"detail": "bad features"}))
+        route = mock.post(M4_PREDICT_URL).respond(422, json={"detail": "bad features"})
         with pytest.raises(ModelServiceError) as exc_info:
             await predict(SAMPLE_FEATURES, settings)
         assert exc_info.value.code == "MODEL_SERVICE_CLIENT_ERROR"
@@ -180,7 +180,7 @@ async def test_m4_retry_respects_configured_max(retry_settings):
 async def test_m4_422_not_retried(retry_settings):
     """422 must never be retried, even with max_retries=2."""
     with respx.mock() as mock:
-        route = mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(422))
+        route = mock.post(M4_PREDICT_URL).respond(422)
         with pytest.raises(ModelServiceError):
             await predict(SAMPLE_FEATURES, retry_settings)
         assert route.call_count == 1, (

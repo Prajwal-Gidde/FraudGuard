@@ -19,8 +19,8 @@ from apps.risk_service.tests.conftest import (
 
 def test_decision_block_on_high_risk(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_HIGH))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=M4_RESPONSE_HIGH))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_HIGH)
+        mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_HIGH)
         
         response = test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
         assert response.status_code == 200
@@ -30,8 +30,8 @@ def test_decision_block_on_high_risk(test_client):
 
 def test_decision_allow_on_low_risk(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_LOW))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=M4_RESPONSE_LOW))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_LOW)
+        mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_LOW)
         
         response = test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
         assert response.status_code == 200
@@ -49,8 +49,8 @@ def test_decision_step_up_on_medium_risk_new_device(test_client):
     m4_resp["fraud_probability"] = 0.25  # Baseline ALLOW, but NEW_DEVICE rule should escalate to STEP_UP
     
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=m3_resp))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=m4_resp))
+        mock.post(M3_EXTRACT_URL).respond(200, json=m3_resp)
+        mock.post(M4_PREDICT_URL).respond(200, json=m4_resp)
         
         response = test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
         assert response.status_code == 200
@@ -60,8 +60,8 @@ def test_decision_step_up_on_medium_risk_new_device(test_client):
 
 def test_decision_includes_policy_version(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_LOW))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=M4_RESPONSE_LOW))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_LOW)
+        mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_LOW)
         
         response = test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
         data = response.json()["data"]
@@ -70,8 +70,8 @@ def test_decision_includes_policy_version(test_client):
 
 def test_decision_rule_signals_in_response(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_LOW))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=M4_RESPONSE_LOW))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_LOW)
+        mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_LOW)
         
         response = test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
         data = response.json()["data"]

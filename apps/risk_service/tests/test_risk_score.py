@@ -21,8 +21,8 @@ from apps.risk_service.tests.conftest import (
 
 def test_score_full_flow_high_risk(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_HIGH))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=M4_RESPONSE_HIGH))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_HIGH)
+        mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_HIGH)
         
         response = test_client.post("/api/v1/risk/score", json=make_envelope(SAMPLE_TRANSACTION))
         assert response.status_code == 200
@@ -41,8 +41,8 @@ def test_score_full_flow_high_risk(test_client):
 def test_score_no_decision_field_in_response(test_client):
     """The /risk/score endpoint must not return a final decision."""
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_HIGH))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=M4_RESPONSE_HIGH))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_HIGH)
+        mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_HIGH)
         
         response = test_client.post("/api/v1/risk/score", json=make_envelope(SAMPLE_TRANSACTION))
         assert response.status_code == 200
@@ -52,8 +52,8 @@ def test_score_no_decision_field_in_response(test_client):
 
 def test_score_full_flow_low_risk(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_LOW))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=M4_RESPONSE_LOW))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_LOW)
+        mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_LOW)
         
         response = test_client.post("/api/v1/risk/score", json=make_envelope(SAMPLE_TRANSACTION))
         assert response.status_code == 200
@@ -79,7 +79,7 @@ def test_score_missing_transaction_id_422(test_client):
 
 def test_score_m3_unavailable_503(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(500))
+        mock.post(M3_EXTRACT_URL).respond(500)
         response = test_client.post("/api/v1/risk/score", json=make_envelope(SAMPLE_TRANSACTION))
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "FEATURE_SERVICE_ERROR"
@@ -87,9 +87,9 @@ def test_score_m3_unavailable_503(test_client):
 
 def test_score_m4_unavailable_503(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_HIGH))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_HIGH)
         # Ensure exhaustion of retries
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(500))
+        mock.post(M4_PREDICT_URL).respond(500)
         
         response = test_client.post("/api/v1/risk/score", json=make_envelope(SAMPLE_TRANSACTION))
         assert response.status_code == 503
@@ -98,8 +98,8 @@ def test_score_m4_unavailable_503(test_client):
 
 def test_score_request_id_echoed(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_HIGH))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=M4_RESPONSE_HIGH))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_HIGH)
+        mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_HIGH)
         
         response = test_client.post("/api/v1/risk/score", json=make_envelope(SAMPLE_TRANSACTION, "REQ_123456"))
         assert response.status_code == 200
@@ -108,8 +108,8 @@ def test_score_request_id_echoed(test_client):
 
 def test_score_includes_rule_signals(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_HIGH))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=M4_RESPONSE_HIGH))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_HIGH)
+        mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_HIGH)
         
         response = test_client.post("/api/v1/risk/score", json=make_envelope(SAMPLE_TRANSACTION))
         data = response.json()["data"]
@@ -120,8 +120,8 @@ def test_score_includes_rule_signals(test_client):
 
 def test_score_includes_latency_breakdown(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
-        mock.post(M3_EXTRACT_URL).mock(return_value=httpx.Response(200, json=M3_RESPONSE_HIGH))
-        mock.post(M4_PREDICT_URL).mock(return_value=httpx.Response(200, json=M4_RESPONSE_HIGH))
+        mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_HIGH)
+        mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_HIGH)
         
         response = test_client.post("/api/v1/risk/score", json=make_envelope(SAMPLE_TRANSACTION))
         data = response.json()["data"]
