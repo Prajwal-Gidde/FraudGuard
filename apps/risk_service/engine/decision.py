@@ -72,3 +72,24 @@ def decide(
 
     # ── Phase 3: Return final decision ────────────────────────────────────────
     return current
+
+def decide_fallback(
+    rule_signals: list[RuleSignal],
+) -> Decision:
+    """
+    Deterministic fallback policy when ML model (M4) is unavailable.
+    Baseline is ALLOW, relying entirely on deterministic rules to escalate.
+    """
+    current = Decision.ALLOW
+    for signal in rule_signals:
+        if not signal.triggered:
+            continue
+        if signal.severity == RuleSeverity.HIGH:
+            current = _escalate(current, Decision.BLOCK)
+        elif signal.severity == RuleSeverity.MEDIUM:
+            if signal.rule_id == "MULTI_DEVICE":
+                current = _escalate(current, Decision.REVIEW)
+            else:
+                current = _escalate(current, Decision.STEP_UP)
+    
+    return current

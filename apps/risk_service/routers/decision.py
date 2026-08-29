@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from apps.risk_service.clients.feature_client import FeatureServiceError, extract
 from apps.risk_service.clients.model_client import ModelServiceError, predict
-from apps.risk_service.engine.decision import decide
+from apps.risk_service.engine.decision import decide, decide_fallback
 from apps.risk_service.engine.rules import evaluate_all
 from apps.risk_service.schemas.risk import DecisionData, LatencyBreakdown
 from shared.schemas.envelope import EnvelopeRequest, EnvelopeResponse, ErrorDetail, StatusEnum
@@ -62,14 +62,19 @@ async def make_decision(payload: EnvelopeRequest, request: Request) -> JSONRespo
 
     # ── M4 prediction (retries allowed) ──────────────────────────────────────
     t_m4 = time.monotonic()
+    fallback_used = False
+    reason_codes = []
+    prediction = None
+    
     try:
         prediction = await predict(features=feat_result.features, settings=settings)
     except ModelServiceError as exc:
-        return _error(req_id, 503, exc.code, exc.message)
+        fallback_used = True
+        reason_codes.append("MODEL_UNAVAILABLE")
     t_m4_ms = int((time.monotonic() - t_m4) * 1000)
 
     # Live recovery: update cached model_version if startup was degraded
-    if model_meta.metadata_status == "degraded" and prediction.model_version not in ("", "unknown"):
+    if prediction and model_meta.metadata_status == "degraded" and prediction.model_version not in ("", "unknown"):
         model_meta.model_version = prediction.model_version
         model_meta.metadata_status = "recovered"
         print(
@@ -87,11 +92,14 @@ async def make_decision(payload: EnvelopeRequest, request: Request) -> JSONRespo
 
     # ── Policy engine ─────────────────────────────────────────────────────────
     t_policy = time.monotonic()
-    final_decision = decide(
-        fraud_probability=prediction.fraud_probability,
-        rule_signals=rule_signals,
-        config=settings,
-    )
+    if fallback_used:
+        final_decision = decide_fallback(rule_signals=rule_signals)
+    else:
+        final_decision = decide(
+            fraud_probability=prediction.fraud_probability,
+            rule_signals=rule_signals,
+            config=settings,
+        )
     t_policy_ms = int((time.monotonic() - t_policy) * 1000)
 
     total_ms = int((time.monotonic() - t_start) * 1000)
@@ -100,11 +108,13 @@ async def make_decision(payload: EnvelopeRequest, request: Request) -> JSONRespo
         transaction_id=transaction.transaction_id,
         decision=final_decision,
         policy_version=settings.policy_version,
-        fraud_probability=prediction.fraud_probability,
-        risk_score=prediction.risk_score,
-        model_version=prediction.model_version,
+        fraud_probability=prediction.fraud_probability if prediction else None,
+        risk_score=prediction.risk_score if prediction else None,
+        model_version=prediction.model_version if prediction else "unavailable",
         feature_schema_version=feat_result.feature_schema_version,
         rule_signals=rule_signals,
+        fallback_used=fallback_used,
+        reason_codes=reason_codes,
         latency_ms=LatencyBreakdown(
             feature_service_ms=t_m3_ms,
             model_service_ms=t_m4_ms,

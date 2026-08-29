@@ -63,6 +63,10 @@ def _coerce_bools(features: dict) -> dict:
     return result
 
 
+# Module-level connection pool to eliminate TCP/DNS setup latency per request
+_http_client = httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=100))
+
+
 async def predict(features: dict, settings: Settings) -> ModelPrediction:
     """
     POST to M4 /api/v1/model/predict with retry on transient failures.
@@ -77,10 +81,11 @@ async def predict(features: dict, settings: Settings) -> ModelPrediction:
     for attempt in range(max_attempts):
         is_last = attempt == max_attempts - 1
         try:
-            async with httpx.AsyncClient(
+            response = await _http_client.post(
+                url, 
+                json=payload, 
                 timeout=settings.model_service_timeout_seconds
-            ) as client:
-                response = await client.post(url, json=payload)
+            )
 
             # 4xx → client error, never retry
             if 400 <= response.status_code < 500:
@@ -149,10 +154,10 @@ async def get_model_info(settings: Settings) -> ModelInfo:
     for attempt in range(max_attempts):
         is_last = attempt == max_attempts - 1
         try:
-            async with httpx.AsyncClient(
+            response = await _http_client.get(
+                url, 
                 timeout=settings.model_service_timeout_seconds
-            ) as client:
-                response = await client.get(url)
+            )
 
             if 400 <= response.status_code < 500:
                 raise ModelServiceError(

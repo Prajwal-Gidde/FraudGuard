@@ -12,7 +12,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ── Enums ─────────────────────────────────────────────────────────────────────
@@ -74,12 +74,14 @@ class DecisionData(BaseModel):
     transaction_id: str
     decision: Decision             # Final business decision
     policy_version: str
-    fraud_probability: float
-    risk_score: int
+    fraud_probability: float | None = None
+    risk_score: int | None = None
     model_version: str
     feature_schema_version: str
     rule_signals: list[RuleSignal]
     latency_ms: LatencyBreakdown
+    fallback_used: bool = False
+    reason_codes: list[str] = Field(default_factory=list)
 
 
 # ── /feedback ─────────────────────────────────────────────────────────────────

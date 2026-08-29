@@ -36,6 +36,9 @@ class FeatureResult:
     transaction_id: str
 
 
+# Module-level connection pool to eliminate TCP/DNS setup latency per request
+_http_client = httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=100))
+
 async def extract(
     transaction_data: dict,
     settings: Settings,
@@ -63,10 +66,11 @@ async def extract(
 
     # ONE attempt — no retry loop, no fallback
     try:
-        async with httpx.AsyncClient(
+        response = await _http_client.post(
+            url, 
+            json=payload, 
             timeout=settings.feature_service_timeout_seconds
-        ) as client:
-            response = await client.post(url, json=payload)
+        )
     except httpx.TimeoutException as exc:
         raise FeatureServiceError(
             "FEATURE_SERVICE_UNAVAILABLE",
