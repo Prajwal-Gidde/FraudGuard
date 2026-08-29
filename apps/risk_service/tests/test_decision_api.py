@@ -2,6 +2,7 @@
 Integration tests for POST /api/v1/decision and GET /api/v1/risk/{id}.
 """
 from __future__ import annotations
+import pytest
 
 import httpx
 import respx
@@ -17,29 +18,32 @@ from apps.risk_service.tests.conftest import (
 )
 
 
-def test_decision_block_on_high_risk(test_client):
+@pytest.mark.asyncio
+async def test_decision_block_on_high_risk(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
         mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_HIGH)
         mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_HIGH)
         
-        response = test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
+        response = await test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
         assert response.status_code == 200
         data = response.json()["data"]
         assert data["decision"] == "BLOCK"
 
 
-def test_decision_allow_on_low_risk(test_client):
+@pytest.mark.asyncio
+async def test_decision_allow_on_low_risk(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
         mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_LOW)
         mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_LOW)
         
-        response = test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
+        response = await test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
         assert response.status_code == 200
         data = response.json()["data"]
         assert data["decision"] == "ALLOW"
 
 
-def test_decision_step_up_on_medium_risk_new_device(test_client):
+@pytest.mark.asyncio
+async def test_decision_step_up_on_medium_risk_new_device(test_client):
     mid_features = dict(M3_RESPONSE_LOW["data"]["features"])
     mid_features["is_new_device"] = True
     m3_resp = dict(M3_RESPONSE_LOW)
@@ -52,35 +56,38 @@ def test_decision_step_up_on_medium_risk_new_device(test_client):
         mock.post(M3_EXTRACT_URL).respond(200, json=m3_resp)
         mock.post(M4_PREDICT_URL).respond(200, json=m4_resp)
         
-        response = test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
+        response = await test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
         assert response.status_code == 200
         data = response.json()["data"]
         assert data["decision"] == "STEP_UP"
 
 
-def test_decision_includes_policy_version(test_client):
+@pytest.mark.asyncio
+async def test_decision_includes_policy_version(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
         mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_LOW)
         mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_LOW)
         
-        response = test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
+        response = await test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
         data = response.json()["data"]
         assert data["policy_version"] == test_client.app.state.settings.policy_version
 
 
-def test_decision_rule_signals_in_response(test_client):
+@pytest.mark.asyncio
+async def test_decision_rule_signals_in_response(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
         mock.post(M3_EXTRACT_URL).respond(200, json=M3_RESPONSE_LOW)
         mock.post(M4_PREDICT_URL).respond(200, json=M4_RESPONSE_LOW)
         
-        response = test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
+        response = await test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
         data = response.json()["data"]
         assert "rule_signals" in data
         assert isinstance(data["rule_signals"], list)
 
 
-def test_get_risk_stub_404(test_client):
-    response = test_client.get("/api/v1/risk/txn_123")
+@pytest.mark.asyncio
+async def test_get_risk_stub_404(test_client):
+    response = await test_client.get("/api/v1/risk/txn_123")
     assert response.status_code == 404
     body = response.json()
     assert body["error"]["code"] == "NOT_FOUND"

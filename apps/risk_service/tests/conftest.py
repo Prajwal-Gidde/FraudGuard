@@ -11,6 +11,7 @@ Integration test strategy:
 from __future__ import annotations
 
 import pytest
+import pytest_asyncio
 import httpx
 import respx
 from fastapi.testclient import TestClient
@@ -146,39 +147,35 @@ def fast_settings(**overrides) -> Settings:
 
 # ── Integration test fixtures ─────────────────────────────────────────────────
 
-@pytest.fixture(scope="function")
-def test_client():
-    """
-    TestClient with model metadata pre-set to 'ok'.
-    Lifespan runs during TestClient __enter__. Since M4 is not available,
-    model_metadata defaults to degraded; we override it here to 'ok'.
-    """
-    with respx.mock(assert_all_mocked=False):
-        with TestClient(app) as client:
-            # Override degraded state set by lifespan
-            client.app.state.model_metadata = ModelMetadata(
-                model_version="xgb-1.0",
-                model_name="XGBClassifier",
-                source="test_fixture",
-                metadata_status="ok",
-            )
-            yield client
+@pytest_asyncio.fixture(scope="function")
+async def test_client():
+    # Run lifespan manually or use AsyncClient with ASGITransport
+    from httpx import AsyncClient, ASGITransport
+    app.state.model_metadata = ModelMetadata(
+        model_version="xgb-1.0",
+        model_name="XGBClassifier",
+        source="test_fixture",
+        metadata_status="ok",
+    )
+    # Ensure settings exist as lifespan is bypassed
+    app.state.settings = get_settings()
+    app.state.feature_schema_version = "1.0"
+    
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        yield client
 
 
-@pytest.fixture(scope="function")
-def degraded_client():
-    """
-    TestClient with model metadata left in degraded state (simulates M4
-    being unavailable at startup). Used to test degraded-state behavior
-    and model_version recovery.
-    """
-    with respx.mock(assert_all_mocked=False):
-        with TestClient(app) as client:
-            # Ensure degraded state
-            client.app.state.model_metadata = ModelMetadata(
-                model_version="unknown",
-                model_name="unknown",
-                source="unknown",
-                metadata_status="degraded",
-            )
-            yield client
+@pytest_asyncio.fixture(scope="function")
+async def degraded_client():
+    from httpx import AsyncClient, ASGITransport
+    app.state.model_metadata = ModelMetadata(
+        model_version="unknown",
+        model_name="unknown",
+        source="unknown",
+        metadata_status="degraded",
+    )
+    app.state.settings = get_settings()
+    app.state.feature_schema_version = "1.0"
+    
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        yield client
