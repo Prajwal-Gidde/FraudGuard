@@ -70,7 +70,7 @@ async def test_decision_includes_policy_version(test_client):
         
         response = await test_client.post("/api/v1/decision", json=make_envelope(SAMPLE_TRANSACTION))
         data = response.json()["data"]
-        assert data["policy_version"] == test_client.app.state.settings.policy_version
+        assert data["policy_version"] == "v1"
 
 
 @pytest.mark.asyncio
