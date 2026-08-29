@@ -1,7 +1,7 @@
 # FraudGuard 360 - Fraud Detection ML Module (Member 4)
 
 ## 1. Overview
-The Fraud Detection ML module (Member 4) for **FraudGuard 360** trains machine learning classification models on transaction features, calibrates prediction probabilities, registers production models to the MLflow Model Registry, and serves real-time fraud predictions, risk scoring, risk categorization, and SHAP-based feature explanations via a RESTful FastAPI service.
+The Fraud Detection ML module (Member 4) for **FraudGuard 360** trains machine learning classification models on transaction features, calibrates prediction probabilities, registers pinned prototype models / final demo models to the MLflow Model Registry, and serves real-time fraud predictions, risk scoring, risk categorization, and SHAP-based feature explanations via a RESTful FastAPI service.
 
 ---
 
@@ -23,8 +23,11 @@ pip install -r requirements.txt
 ## 3. How to Run
 
 ```powershell
-# 1. Generate synthetic dummy training dataset
-python dummy_data.py
+# 1. Extract feature vectors from real fixture dataset (Primary Workflow - DS_91c85fbe)
+python real_data_pipeline.py
+
+# Alternative / Fallback Step: Generate synthetic dummy dataset (Dummy fallback option)
+# python dummy_data.py
 
 # 2. Train candidate models, apply probability calibration, and register best model to MLflow Registry
 python train.py
@@ -38,6 +41,7 @@ python main.py
 # 5. Launch MLflow UI to inspect experiment runs & Model Registry (opens http://127.0.0.1:5000)
 mlflow ui
 ```
+
 > Interactive API Documentation (Swagger UI) is available at: `http://localhost:8000/docs`
 
 ---
@@ -95,8 +99,13 @@ mlflow ui
 ```json
 {
   "model": "LogisticRegression",
-  "version": "logreg-1.0",
-  "source": "registry"
+  "version": "logreg-1.0-v5",
+  "source": "registry",
+  "registered_model_name": "fraudguard360-detector",
+  "registered_model_version": "5",
+  "run_id": "b7b76f72847d409d88edab4288032f6f",
+  "feature_schema_version": "1.0",
+  "artifact_sha256": "76966a027c034fdc210fac690ad2877fb004c12c99569b10d4b4df11ca3bb688"
 }
 ```
 
@@ -109,15 +118,16 @@ mlflow ui
   - LightGBM: `LGBMClassifier(n_estimators=100, max_depth=4, learning_rate=0.1)`
 - **Probability Calibration**: Top candidate selected by ROC AUC is wrapped with `CalibratedClassifierCV(estimator=best_model, method="sigmoid", cv=5)` to output well-calibrated posterior probabilities (Platt Scaling).
 - **MLflow Model Registry**: Calibrated model registered under `"fraudguard360-detector"` and transitioned to stage `"Staging"` using `MlflowClient`.
-- **Production Model Sourcing**: [model_loader.py](model_loader.py) loads from the MLflow Model Registry (`models:/fraudguard360-detector/Staging`) first, gracefully falling back to [models/best_model.joblib](models/best_model.joblib) if the registry is unreachable.
+- **Pinned Prototype Model Sourcing**: [model_loader.py](model_loader.py) loads from the MLflow Model Registry (`models:/fraudguard360-detector/Staging`) first, gracefully falling back to local artifact [models/best_model.joblib](models/best_model.joblib). Note that all deployed artifacts represent a **pinned prototype model** / **final demo model** for integration and demonstration.
 
 ---
 
-## 7. Known Limitations
-1. **Provisional Decision Thresholds**: Risk category thresholds (`HIGH_RISK` >= 0.7, `MEDIUM_RISK` >= 0.4, `LOW_RISK` < 0.4) are provisional defaults pending joint calibration with Member 5.
-2. **SHAP Feature Attribution Scale**: SHAP impacts for linear model baselines are evaluated on log-odds scale relative to reference background data.
-3. **Staging Registry Stage**: Model registry stage is initialized to `"Staging"` - promotion to `"Production"` is a manual/deliberate step, not automated.
-4. **Local Tracking Store**: MLflow uses a local `sqlite:///mlflow.db` backend store for this prototype rather than a shared remote MLflow server.
+## 7. Known Limitations & Model Classification
+1. **Model Scope**: The active artifact is designated as a **pinned prototype model** / **final demo model** for demonstration and integration testing, not a production-ready model.
+2. **Provisional Decision Thresholds**: Risk category thresholds (`HIGH_RISK` >= 0.7, `MEDIUM_RISK` >= 0.4, `LOW_RISK` < 0.4) are provisional defaults pending joint calibration with Member 5.
+3. **SHAP Feature Attribution Scale**: SHAP impacts for linear model baselines are evaluated on log-odds scale relative to reference background data.
+4. **Staging Registry Stage**: Model registry stage is initialized to `"Staging"` - promotion to `"Production"` is a manual/deliberate step, not automated.
+5. **Local Tracking Store**: MLflow uses a local `sqlite:///mlflow.db` backend store for this prototype rather than a shared remote MLflow server.
 
 ---
 

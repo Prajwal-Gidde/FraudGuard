@@ -21,8 +21,8 @@ DB_PATH = "sqlite:///mlflow.db"
 mlflow.set_tracking_uri(DB_PATH)
 
 
-# Data source configuration: 'real' (12 features) vs 'dummy' (4 synthetic features)
-DATA_SOURCE = "real"
+# Data source configuration: 'dummy' (default deterministic path) vs 'real' (opt-in)
+DATA_SOURCE = os.getenv("DATA_SOURCE", "dummy")
 
 REAL_FEATURE_COLUMNS = [
     "customer_txn_count_60m",
@@ -39,21 +39,17 @@ REAL_FEATURE_COLUMNS = [
     "relationship_risk_score",
 ]
 
-DUMMY_FEATURE_COLUMNS = [
-    "customer_txn_count_60m",
-    "amount_deviation_ratio",
-    "is_new_device",
-    "shared_device_account_count",
-]
+# Set active feature columns to 12 canonical Member 3 features
+FEATURE_COLUMNS = REAL_FEATURE_COLUMNS
 
-if DATA_SOURCE == "real":
+if DATA_SOURCE == "real" and (os.path.exists("data/features_real.csv") or os.path.exists("data/features_real_DS_91c85fbe.csv")):
     DEFAULT_DATA_PATH = "data/features_real.csv"
     FALLBACK_DATA_PATH = "data/features_real_DS_91c85fbe.csv"
-    FEATURE_COLUMNS = REAL_FEATURE_COLUMNS
 else:
+    DATA_SOURCE = "dummy"
     DEFAULT_DATA_PATH = "dummy_data/train_dummy.csv"
     FALLBACK_DATA_PATH = "dummy_data/train_dummy.csv"
-    FEATURE_COLUMNS = DUMMY_FEATURE_COLUMNS
+
 
 
 def load_data(file_path: str = None):
@@ -69,6 +65,7 @@ def load_data(file_path: str = None):
             file_path = DEFAULT_DATA_PATH
 
     print(f"Loading dataset from: {file_path} (DATA_SOURCE={DATA_SOURCE})")
+
     df = pd.read_csv(file_path)
 
     # Map legacy columns if present for backwards compatibility

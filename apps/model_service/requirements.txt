@@ -13,3 +13,4 @@ pytest
 opencv-python-headless
 httpx2
 pyarrow>=15.0.0
+

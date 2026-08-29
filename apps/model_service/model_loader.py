@@ -68,6 +68,39 @@ def load_production_model():
         return loaded_model, "local_fallback"
 
 
+def get_active_model_metadata():
+    """
+    Queries MLflow tracking backend to retrieve active registered model name,
+    version, and run ID for Staging model.
+    """
+    model_name = "fraudguard360-detector"
+    version = "local_fallback"
+    run_id = "N/A"
+
+    try:
+        mlflow.set_tracking_uri(DB_PATH)
+        from mlflow.tracking import MlflowClient
+        client = MlflowClient()
+        staging_versions = client.get_latest_versions(model_name, stages=["Staging"])
+        if staging_versions:
+            stg = staging_versions[-1]
+            version = str(stg.version)
+            run_id = str(stg.run_id)
+        else:
+            all_versions = client.get_latest_versions(model_name)
+            if all_versions:
+                stg = all_versions[-1]
+                version = str(stg.version)
+                run_id = str(stg.run_id)
+    except Exception as err:
+        print(f"[model_loader] Note: Could not fetch MLflow registered version info: {err}")
+
+    return model_name, version, run_id
+
+
 if __name__ == "__main__":
     model_obj, source = load_production_model()
+    m_name, m_ver, r_id = get_active_model_metadata()
     print(f"Loaded model type: {type(model_obj).__name__}, Source: {source}")
+    print(f"Registry Meta: Name={m_name}, Version={m_ver}, RunID={r_id}")
+

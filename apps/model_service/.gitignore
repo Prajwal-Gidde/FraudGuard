@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+
+# Virtual environments
+venv/
+env/
+
+# MLflow runtime (not tracked)
+mlruns/
+mlflow.db
+
+# Pytest cache
+.pytest_cache/
+
+# Scratch scripts
+check_state.py
+final_state_audit.py
+verify_12feature_system.py
+verify_model_consistency.py
+inspect_remote.py
+do_git_commit.py
+git_commit_m4.ps1
+powershell.cmd
+real_data_pipeline.py
+data/

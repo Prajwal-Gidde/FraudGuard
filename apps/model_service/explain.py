@@ -12,6 +12,7 @@ import lightgbm as lgb
 MODEL_PATH = "models/best_model.joblib"
 DATA_PATH = "data/features_real.csv"
 
+
 # Global cached variables
 _model = None
 _explainer = None
@@ -61,20 +62,36 @@ def normalize_feature_dict(raw_dict: dict) -> dict:
 
 def unwrap_model(model_obj):
     """
-    Extracts the underlying estimator from CalibratedClassifierCV if wrapped.
+    Extracts the underlying fitted base estimator from CalibratedClassifierCV or other wrappers.
     """
+    # 1. If wrapped in CalibratedClassifierCV
+    if hasattr(model_obj, "calibrated_classifiers_") and len(model_obj.calibrated_classifiers_) > 0:
+        cc = model_obj.calibrated_classifiers_[0]
+        if hasattr(cc, "estimator") and cc.estimator is not None:
+            return unwrap_model(cc.estimator)
+        elif hasattr(cc, "base_estimator") and cc.base_estimator is not None:
+            return unwrap_model(cc.base_estimator)
+        return cc
+
+    # 2. If wrapped in standard Estimator wrapper with estimator/base_estimator
     if hasattr(model_obj, "estimator") and model_obj.estimator is not None:
-        return model_obj.estimator
-    elif hasattr(model_obj, "base_estimator") and model_obj.base_estimator is not None:
-        return model_obj.base_estimator
-    elif hasattr(model_obj, "calibrated_classifiers_") and len(model_obj.calibrated_classifiers_) > 0:
-        return model_obj.calibrated_classifiers_[0].estimator
+        est = model_obj.estimator
+        if hasattr(est, "classes_") or hasattr(est, "coef_") or hasattr(est, "feature_importances_") or hasattr(est, "predict_proba"):
+            return unwrap_model(est)
+    if hasattr(model_obj, "base_estimator") and model_obj.base_estimator is not None:
+        est = model_obj.base_estimator
+        if hasattr(est, "classes_") or hasattr(est, "coef_") or hasattr(est, "feature_importances_") or hasattr(est, "predict_proba"):
+            return unwrap_model(est)
+
     return model_obj
 
 
-def get_explainer_and_model():
+import model_loader
+
+
+def get_explainer_and_model(model_override=None):
     """
-    Loads best_model.joblib and test background dataset, initializing the appropriate SHAP explainer.
+    Loads production model via model_loader and reference background dataset, initializing the SHAP explainer.
     
     Returns
     -------
@@ -82,45 +99,93 @@ def get_explainer_and_model():
         (model, explainer)
     """
     global _model, _explainer
-    if _model is not None and _explainer is not None:
+
+    if model_override is not None:
+        model_to_use = model_override
+    elif _model is not None:
+        model_to_use = _model
+    else:
+        try:
+            model_to_use, _ = model_loader.load_production_model()
+        except Exception:
+            if not os.path.exists(MODEL_PATH):
+                raise FileNotFoundError(f"Model file not found at '{MODEL_PATH}'. Please run train.py first.")
+            model_to_use = joblib.load(MODEL_PATH)
+        _model = model_to_use
+
+    if _explainer is not None and model_override is None:
         return _model, _explainer
 
-    if not os.path.exists(MODEL_PATH):
-        raise FileNotFoundError(f"Model file not found at '{MODEL_PATH}'. Please run train.py first.")
+    base_model = unwrap_model(model_to_use)
 
-    _model = joblib.load(MODEL_PATH)
+    # Determine data path based on available dataset files
+    if os.path.exists("data/features_real.csv"):
+        data_path = "data/features_real.csv"
+    elif os.path.exists("data/features_real_DS_91c85fbe.csv"):
+        data_path = "data/features_real_DS_91c85fbe.csv"
+    elif os.path.exists(DATA_PATH):
+        data_path = DATA_PATH
+    else:
+        data_path = None
 
-    # Load dataset to extract background data for SHAP explainers requiring reference samples
-    df = pd.read_csv(DATA_PATH)
-    X = df.drop(columns=["is_fraud"])
-    y = df["is_fraud"]
-    X_train, _, _, _ = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
+    if hasattr(base_model, "feature_names_in_"):
+        feature_cols = list(base_model.feature_names_in_)
+    elif hasattr(base_model, "n_features_in_") and base_model.n_features_in_ == 4:
+        feature_cols = [
+            "customer_txn_count_60m",
+            "amount_deviation_ratio",
+            "is_new_device",
+            "shared_device_account_count",
+        ]
+    else:
+        feature_cols = REAL_FEATURE_COLUMNS
 
-    base_model = unwrap_model(_model)
+    if data_path and os.path.exists(data_path):
+        df = pd.read_csv(data_path)
+        for col in feature_cols:
+            if col not in df.columns:
+                df[col] = 0
+        X = df[feature_cols]
+        y = df["is_fraud"] if "is_fraud" in df.columns else np.zeros(len(df))
+        stratify_target = y if len(np.unique(y)) > 1 else None
+        X_train, _, _, _ = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=stratify_target
+        )
+    else:
+        X_train = pd.DataFrame(np.zeros((10, len(feature_cols))), columns=feature_cols)
+
     base_type_name = type(base_model).__name__
 
-    # Detect model type and select appropriate SHAP Explainer
-    if isinstance(base_model, (xgb.XGBClassifier, lgb.LGBMClassifier)) or "XGB" in base_type_name or "LGBM" in base_type_name:
-        _explainer = shap.TreeExplainer(base_model)
-    elif isinstance(base_model, LogisticRegression) or "LogisticRegression" in base_type_name:
-        _explainer = shap.LinearExplainer(base_model, X_train)
-    else:
-        _explainer = shap.Explainer(base_model, X_train)
+    try:
+        if isinstance(base_model, (xgb.XGBClassifier, lgb.LGBMClassifier)) or "XGB" in base_type_name or "LGBM" in base_type_name:
+            explainer = shap.TreeExplainer(base_model)
+        elif isinstance(base_model, LogisticRegression) or "LogisticRegression" in base_type_name:
+            explainer = shap.LinearExplainer(base_model, X_train)
+        else:
+            explainer = shap.Explainer(base_model, X_train)
+    except Exception as e:
+        print(f"[explain] Primary explainer creation failed ({e}), trying generic explainer.")
+        try:
+            explainer = shap.Explainer(base_model, X_train)
+        except Exception:
+            explainer = None
 
-    return _model, _explainer
+    if model_override is None:
+        _explainer = explainer
+
+    return model_to_use, explainer
 
 
-def explain_transaction(feature_dict: dict) -> dict:
+def explain_transaction(feature_dict: dict, model_override=None) -> dict:
     """
     Computes fraud probability and feature attribution (SHAP impact) for a single transaction.
 
     Parameters
     ----------
     feature_dict : dict
-        Key-value mapping of input transaction features matching feature schema:
-        {"velocity_1h": int, "amount_deviation": float, "new_device": int, "shared_device_count": int}
+        Key-value mapping of input transaction features matching feature schema.
+    model_override : optional
+        Active model instance passed from service handler.
 
     Returns
     -------
@@ -129,48 +194,88 @@ def explain_transaction(feature_dict: dict) -> dict:
         - "fraud_probability": float (0.0 to 1.0)
         - "top_factors": list of dicts [{"feature": str, "impact": float}], sorted by abs(impact) descending
     """
-    model, explainer = get_explainer_and_model()
+    model, explainer = get_explainer_and_model(model_override=model_override)
 
-    # Normalize keys if legacy names were passed
     norm_dict = normalize_feature_dict(feature_dict)
 
+    base_model = unwrap_model(model)
+    if hasattr(base_model, "feature_names_in_"):
+        feature_names = list(base_model.feature_names_in_)
+    elif hasattr(base_model, "n_features_in_") and base_model.n_features_in_ == 4:
+        feature_names = [
+            "customer_txn_count_60m",
+            "amount_deviation_ratio",
+            "is_new_device",
+            "shared_device_account_count",
+        ]
+    else:
+        feature_names = REAL_FEATURE_COLUMNS
+
+    # Ensure all feature columns exist in norm_dict
+    for col in feature_names:
+        if col not in norm_dict:
+            norm_dict[col] = 0.0 if ("score" in col or "prior" in col or "ratio" in col) else 0
+
     # Create 1-row DataFrame maintaining exact feature column order
-    df_single = pd.DataFrame([norm_dict])[_feature_names]
+    df_single = pd.DataFrame([norm_dict])[feature_names]
 
     # Predict calibrated fraud probability (class 1)
     fraud_prob = float(model.predict_proba(df_single)[0, 1])
 
-    # Compute SHAP values using base model explainer
-    raw_shap = explainer.shap_values(df_single)
+    # Compute feature attribution (SHAP impact with fallback to model feature weights)
+    impacts = None
 
-    # Standardize SHAP output into a 1D vector of feature impacts for fraud class (1)
-    if isinstance(raw_shap, list):
-        # List per output class [class_0, class_1]
-        class_1_vals = raw_shap[1]
-        impacts = class_1_vals[0] if class_1_vals.ndim == 2 else class_1_vals
-    elif isinstance(raw_shap, np.ndarray):
-        if raw_shap.ndim == 3:
-            impacts = raw_shap[0, :, 1]
-        elif raw_shap.ndim == 2:
-            impacts = raw_shap[0]
+    if explainer is not None:
+        try:
+            try:
+                raw_shap = explainer.shap_values(df_single)
+            except Exception:
+                raw_shap = explainer(df_single)
+
+            if isinstance(raw_shap, list):
+                class_1_vals = raw_shap[1] if len(raw_shap) > 1 else raw_shap[0]
+                if isinstance(class_1_vals, np.ndarray):
+                    impacts = class_1_vals[0] if class_1_vals.ndim >= 2 else class_1_vals
+                else:
+                    impacts = class_1_vals
+            elif isinstance(raw_shap, np.ndarray):
+                if raw_shap.ndim == 3:
+                    impacts = raw_shap[0, :, 1]
+                elif raw_shap.ndim == 2:
+                    impacts = raw_shap[0]
+                else:
+                    impacts = raw_shap
+            else:
+                vals = getattr(raw_shap, "values", raw_shap)
+                if isinstance(vals, list) and len(vals) > 1:
+                    vals = vals[1]
+                if hasattr(vals, "ndim"):
+                    if vals.ndim == 3:
+                        impacts = vals[0, :, 1]
+                    elif vals.ndim == 2:
+                        impacts = vals[0]
+                    else:
+                        impacts = vals
+        except Exception as err:
+            print(f"[explain] SHAP computation warning: {err}. Using model weight attribution fallback.")
+            impacts = None
+
+    # Fallback to model weights if SHAP values could not be computed
+    if impacts is None:
+        if hasattr(base_model, "coef_"):
+            coefs = base_model.coef_[0] if base_model.coef_.ndim == 2 else base_model.coef_
+            impacts = df_single.values[0] * coefs
+        elif hasattr(base_model, "feature_importances_"):
+            impacts = df_single.values[0] * base_model.feature_importances_
         else:
-            impacts = raw_shap
-    else:
-        exp_obj = explainer(df_single)
-        vals = exp_obj.values
-        if isinstance(vals, list):
-            vals = vals[1]
-        if vals.ndim == 3:
-            impacts = vals[0, :, 1]
-        elif vals.ndim == 2:
-            impacts = vals[0]
-        else:
-            impacts = vals
+            impacts = df_single.values[0]
+
+    impacts = np.asarray(impacts).flatten()
 
     top_factors = []
-    for feat, imp in zip(_feature_names, impacts):
+    for feat, imp in zip(feature_names, impacts):
         top_factors.append({
-            "feature": feat,
+            "feature": str(feat),
             "impact": round(float(imp), 4)
         })
 
@@ -181,6 +286,8 @@ def explain_transaction(feature_dict: dict) -> dict:
         "fraud_probability": round(fraud_prob, 4),
         "top_factors": top_factors
     }
+
+
 
 
 if __name__ == "__main__":
@@ -222,11 +329,20 @@ if __name__ == "__main__":
     else:
         print(f"Dataset path '{DATA_PATH}' not found. Testing with custom sample dict...")
         sample_dict = {
-            "velocity_1h": 7,
-            "amount_deviation": 2.4,
-            "new_device": 1,
-            "shared_device_count": 4
+            "customer_txn_count_60m": 0,
+            "customer_amount_mean_prior": 19.0,
+            "amount_deviation_ratio": 0.3,
+            "is_new_device": 1,
+            "is_new_merchant": 1,
+            "location_shift": 0,
+            "customer_device_degree": 1,
+            "customer_merchant_degree": 1,
+            "device_customer_degree": 11,
+            "merchant_customer_degree": 1,
+            "shared_device_customer_count": 10,
+            "relationship_risk_score": 0.49
         }
         explanation = explain_transaction(sample_dict)
         print(f"Input features: {sample_dict}")
         print(f"Explanation Output:\n{json.dumps(explanation, indent=2)}")
+

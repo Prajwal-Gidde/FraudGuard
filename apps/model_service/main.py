@@ -4,7 +4,8 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import List
+import hashlib
+from typing import List, Optional, Union
 
 import model_loader
 from explain import explain_transaction
@@ -14,19 +15,26 @@ model = None
 model_name = ""
 model_version = ""
 model_source = ""
+registered_model_name = ""
+registered_model_version = ""
+run_id = ""
+artifact_sha256 = ""
 
 
 def unwrap_model(model_obj):
     """
-    Extracts the underlying estimator if wrapped in CalibratedClassifierCV.
+    Extracts the underlying fitted estimator if wrapped in CalibratedClassifierCV.
     """
-    if hasattr(model_obj, "estimator") and model_obj.estimator is not None:
-        return model_obj.estimator
-    elif hasattr(model_obj, "base_estimator") and model_obj.base_estimator is not None:
-        return model_obj.base_estimator
-    elif hasattr(model_obj, "calibrated_classifiers_") and len(model_obj.calibrated_classifiers_) > 0:
+    if hasattr(model_obj, "calibrated_classifiers_") and len(model_obj.calibrated_classifiers_) > 0:
         return model_obj.calibrated_classifiers_[0].estimator
+    elif hasattr(model_obj, "estimator") and model_obj.estimator is not None:
+        if hasattr(model_obj.estimator, "classes_") or hasattr(model_obj.estimator, "coef_") or hasattr(model_obj.estimator, "feature_importances_"):
+            return model_obj.estimator
+    elif hasattr(model_obj, "base_estimator") and model_obj.base_estimator is not None:
+        if hasattr(model_obj.base_estimator, "classes_") or hasattr(model_obj.base_estimator, "coef_") or hasattr(model_obj.base_estimator, "feature_importances_"):
+            return model_obj.base_estimator
     return model_obj
+
 
 
 def determine_model_version(model_obj) -> str:
@@ -44,17 +52,35 @@ def determine_model_version(model_obj) -> str:
     return f"{type_name.lower()}-1.0"
 
 
+def compute_artifact_sha256(file_path: str = "models/best_model.joblib") -> str:
+    if os.path.exists(file_path):
+        with open(file_path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    return ""
+
+
 def load_model():
     """
     Loads saved model at startup using model_loader (MLflow Model Registry Staging stage with local joblib fallback).
     """
-    global model, model_name, model_version, model_source
+    global model, model_name, model_version, model_source, registered_model_name, registered_model_version, run_id, artifact_sha256
     model, model_source = model_loader.load_production_model()
 
     base = unwrap_model(model)
     model_name = type(base).__name__
-    model_version = determine_model_version(base)
-    print(f"[main] Loaded model '{model_name}' ({model_version}) via source '{model_source}'.")
+    reg_name, reg_ver, r_id = model_loader.get_active_model_metadata()
+    registered_model_name = reg_name
+    registered_model_version = reg_ver
+    run_id = r_id
+    artifact_sha256 = compute_artifact_sha256("models/best_model.joblib")
+
+    algo_ver = determine_model_version(base)
+    if reg_ver != "local_fallback":
+        model_version = f"{algo_ver}-v{reg_ver}"
+    else:
+        model_version = algo_ver
+
+    print(f"[main] Loaded model '{model_name}' ({model_version}) via source '{model_source}' (Run ID: {run_id}, SHA256: {artifact_sha256[:8]}...).")
 
 
 @asynccontextmanager
@@ -192,6 +218,11 @@ class ModelInfoResponse(BaseModel):
     model: str
     version: str
     source: str
+    registered_model_name: Optional[str] = None
+    registered_model_version: Optional[Union[str, int]] = None
+    run_id: Optional[str] = None
+    feature_schema_version: str = "1.0"
+    artifact_sha256: Optional[str] = None
 
 
 class FactorImpact(BaseModel):
@@ -234,9 +265,12 @@ def predict_fraud(payload: PredictRequest):
     feats = payload.features
     feature_dict = {
         "customer_txn_count_60m": feats.customer_txn_count_60m,
+        "velocity_1h": feats.customer_txn_count_60m,
         "customer_amount_mean_prior": feats.customer_amount_mean_prior,
         "amount_deviation_ratio": feats.amount_deviation_ratio,
+        "amount_deviation": feats.amount_deviation_ratio,
         "is_new_device": int(feats.is_new_device),
+        "new_device": int(feats.is_new_device),
         "is_new_merchant": int(feats.is_new_merchant),
         "location_shift": int(feats.location_shift),
         "customer_device_degree": feats.customer_device_degree,
@@ -244,8 +278,11 @@ def predict_fraud(payload: PredictRequest):
         "device_customer_degree": feats.device_customer_degree,
         "merchant_customer_degree": feats.merchant_customer_degree,
         "shared_device_customer_count": feats.shared_device_customer_count,
+        "shared_device_account_count": feats.shared_device_customer_count,
+        "shared_device_count": feats.shared_device_customer_count,
         "relationship_risk_score": feats.relationship_risk_score,
     }
+
 
     df_single = pd.DataFrame([feature_dict])
     if hasattr(model, "feature_names_in_"):
@@ -287,7 +324,7 @@ class FeatureServicePredictRequest(BaseModel):
 @app.get("/api/v1/model/info", response_model=ModelInfoResponse)
 def get_model_info():
     """
-    Returns information about the loaded model type, version tag, and model source ('registry' or 'local_fallback').
+    Returns information about the loaded model type, version tag, model source, MLflow registry metadata, feature schema version, and local artifact SHA256.
     """
     if model is None:
         raise HTTPException(status_code=500, detail="Model is not loaded.")
@@ -295,7 +332,12 @@ def get_model_info():
     return ModelInfoResponse(
         model=model_name,
         version=model_version,
-        source=model_source
+        source=model_source,
+        registered_model_name=registered_model_name,
+        registered_model_version=registered_model_version,
+        run_id=run_id,
+        feature_schema_version="1.0",
+        artifact_sha256=artifact_sha256 or compute_artifact_sha256("models/best_model.joblib")
     )
 
 
@@ -377,9 +419,10 @@ def explain_tx(
     }
 
     try:
-        explanation = explain_transaction(feature_dict)
+        explanation = explain_transaction(feature_dict, model_override=model)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate SHAP explanation: {str(e)}")
+
 
     return ExplainResponse(
         transaction_id=transaction_id,
