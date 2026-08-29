@@ -9,8 +9,9 @@ from sklearn.linear_model import LogisticRegression
 import xgboost as xgb
 import lightgbm as lgb
 
-MODEL_PATH = "models/best_model.joblib"
-DATA_PATH = "data/features_real.csv"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "models", "best_model.joblib")
+DATA_PATH = os.path.join(BASE_DIR, "data", "features_real.csv")
 
 
 # Global cached variables
