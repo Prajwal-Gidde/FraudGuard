@@ -141,7 +141,7 @@ def test_can_process_member2_generated_fixture() -> None:
     if not member2_root.exists():
         pytest.skip("Member 2 FraudGuard fixture tree is not present.")
 
-    result = write_feature_dataset("DS_7b49892c", source_roots=[str(member2_root)])
+    result = write_feature_dataset("DS_91c85fbe", source_roots=[str(member2_root)])
     output_path = Path(result["output_path"])
     feature_frame = pd.read_parquet(output_path)
 
