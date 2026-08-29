@@ -22,6 +22,8 @@ from apps.risk_service.config import Settings, get_settings
 # ── Service base URLs (must match Settings defaults) ──────────────────────────
 M3_BASE = "http://feature_service:8000"
 M4_BASE = "http://model_service:8000"
+M3_EXTRACT_URL = f"{M3_BASE}/api/v1/features/extract"
+M4_PREDICT_URL = f"{M4_BASE}/api/v1/model/predict"
 
 # ── Sample data ───────────────────────────────────────────────────────────────
 
