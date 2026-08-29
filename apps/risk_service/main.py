@@ -42,6 +42,8 @@ def _error_response(
     )
 
 
+from apps.risk_service.clients import redis_client, pg_client
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -49,13 +51,17 @@ async def lifespan(app: FastAPI):
     app.state.feature_schema_version = "1.0"
     app.state.model_metadata = ModelMetadata()  # default: degraded / unknown
 
+    # Initialize Slice 2 dependencies
+    redis_client.init_redis(settings)
+    await pg_client.init_pg(settings)
+
     # Attempt to load model metadata at startup.
     # If M4 is unavailable, start in degraded state — do not block startup.
     try:
         info = await get_model_info(settings)
         app.state.model_metadata = ModelMetadata(
-            model_version=info.model_version,
-            model_name=info.model_name,
+            model_version=info.model_version if info.model_version not in ["unknown", ""] else "unknown",
+            model_name=info.model_name if info.model_name not in ["unknown", ""] else "unknown",
             source=info.source,
             metadata_status="ok",
         )
@@ -75,7 +81,9 @@ async def lifespan(app: FastAPI):
         f"| metadata_status={app.state.model_metadata.metadata_status}"
     )
     yield
-    # Shutdown: nothing to clean up in Slice 1
+    # Shutdown
+    await redis_client.close_redis()
+    await pg_client.close_pg()
 
 
 app = FastAPI(

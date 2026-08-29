@@ -17,6 +17,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -49,7 +50,14 @@ class Settings(BaseSettings):
     # ── M4 client — retries allowed (prediction is read-only) ─────────────────
     model_service_timeout_seconds: float = 2.0
     model_service_max_retries: int = 2
-    model_service_retry_backoff_seconds: float = 0.5
+    model_service_retry_backoff_seconds: float = Field(0.1, env="MODEL_SERVICE_RETRY_BACKOFF")
+
+    # Slice 2: Redis and DB config
+    redis_url: str = Field("redis://localhost:6379", alias="REDIS_URL")
+    database_url: str = Field("postgresql://localhost:5432/fraudguard", alias="DATABASE_URL")
+    redis_lock_timeout_ms: int = Field(15000, env="REDIS_LOCK_TIMEOUT_MS")
+    redis_cache_ttl_seconds: int = Field(86400, env="REDIS_CACHE_TTL_SECONDS")
+
     # Comma-separated HTTP status codes eligible for retry (transient errors only)
     # 4xx responses (e.g. 422 validation errors) are NEVER retried.
     model_service_retry_on_status: str = "500,502,503,504"

@@ -3,6 +3,7 @@ Integration tests for GET /api/v1/health and degraded state recovery.
 """
 from __future__ import annotations
 import pytest
+from unittest.mock import patch
 
 import httpx
 import respx
@@ -25,6 +26,8 @@ M4_HEALTH = f"{M4_BASE}/api/v1/health"
 async def test_health_all_ok(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
         mock.get(M3_HEALTH).respond(200)
+        patch('apps.risk_service.clients.redis_client.ping', return_value=True).start()
+        patch('apps.risk_service.clients.pg_client.ping', return_value=True).start()
         mock.get(M4_HEALTH).respond(200)
         
         response = await test_client.get("/api/v1/health")
@@ -55,6 +58,8 @@ async def test_health_m3_down(test_client):
 async def test_health_m4_down(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
         mock.get(M3_HEALTH).respond(200)
+        patch('apps.risk_service.clients.redis_client.ping', return_value=True).start()
+        patch('apps.risk_service.clients.pg_client.ping', return_value=True).start()
         mock.get(M4_HEALTH).respond(500)
         
         response = await test_client.get("/api/v1/health")
@@ -69,6 +74,8 @@ async def test_health_m4_down(test_client):
 async def test_health_includes_versions(test_client):
     with respx.mock(assert_all_mocked=False) as mock:
         mock.get(M3_HEALTH).respond(200)
+        patch('apps.risk_service.clients.redis_client.ping', return_value=True).start()
+        patch('apps.risk_service.clients.pg_client.ping', return_value=True).start()
         mock.get(M4_HEALTH).respond(200)
         
         response = await test_client.get("/api/v1/health")
@@ -84,6 +91,8 @@ async def test_health_degraded_when_model_unknown(degraded_client):
     """⭐ Tests degraded metadata status when M4 was down at startup."""
     with respx.mock(assert_all_mocked=False) as mock:
         mock.get(M3_HEALTH).respond(200)
+        patch('apps.risk_service.clients.redis_client.ping', return_value=True).start()
+        patch('apps.risk_service.clients.pg_client.ping', return_value=True).start()
         mock.get(M4_HEALTH).respond(200)
         
         response = await degraded_client.get("/api/v1/health")
@@ -100,6 +109,8 @@ async def test_health_recovered_when_metadata_restored(degraded_client):
     with respx.mock(assert_all_mocked=False) as mock:
         # First, ensure we start degraded
         mock.get(M3_HEALTH).respond(200)
+        patch('apps.risk_service.clients.redis_client.ping', return_value=True).start()
+        patch('apps.risk_service.clients.pg_client.ping', return_value=True).start()
         mock.get(M4_HEALTH).respond(200)
         
         res_initial = await degraded_client.get("/api/v1/health")

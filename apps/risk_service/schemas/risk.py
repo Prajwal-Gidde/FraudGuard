@@ -82,6 +82,9 @@ class DecisionData(BaseModel):
     latency_ms: LatencyBreakdown
     fallback_used: bool = False
     reason_codes: list[str] = Field(default_factory=list)
+    # Slice 2 additions
+    audit_persisted: bool = False
+    source: str | None = None      # Used for GET /risk/{id}
 
 
 # ── /feedback ─────────────────────────────────────────────────────────────────
@@ -89,7 +92,7 @@ class DecisionData(BaseModel):
 class FeedbackData(BaseModel):
     transaction_id: str
     original_decision: str
-    feedback: str
+    feedback_type: str
     reviewer: str | None = None
     notes: str | None = None
 
@@ -105,6 +108,8 @@ class FeedbackResponseData(BaseModel):
 class HealthUpstream(BaseModel):
     feature_service: str
     model_service: str
+    redis: str = "ok"              # Slice 2
+    postgres: str = "ok"           # Slice 2
 
 
 class HealthData(BaseModel):
@@ -119,7 +124,11 @@ class HealthData(BaseModel):
 # ── Model metadata (stored in app.state) ──────────────────────────────────────
 
 class ModelMetadata(BaseModel):
-    model_version: str = "unknown"
-    model_name: str = "unknown"
+    model_version: str = "logreg-1.0-v6"
+    model_name: str = "fraudguard360-detector"
     source: str = "unknown"
     metadata_status: str = "degraded"   # "ok" | "degraded" | "recovered"
+    registered_model_name: str = "fraudguard360-detector"
+    registered_model_version: str = "6"
+    run_id: str = "793b4dd5b8064cb29a8208264fca5811"
+    artifact_sha256: str = "76966a027c034fdc210fac690ad2877fb004c12c99569b10d4b4df11ca3bb688"
