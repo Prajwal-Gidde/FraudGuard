@@ -119,19 +119,28 @@ def run_training_pipeline(data_path: str = None):
         },
         "xgboost_v1": {
             "model": xgb.XGBClassifier(
-                n_estimators=100,
-                max_depth=4,
-                learning_rate=0.1,
-                eval_metric="logloss",
+                n_estimators=500,
+                max_depth=6,
+                learning_rate=0.05,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                scale_pos_weight=round((y_train == 0).sum() / (y_train == 1).sum()),
+                eval_metric="aucpr",
+                objective="binary:logistic",
                 random_state=42,
+                n_jobs=-1,
             ),
             "log_fn": mlflow.xgboost.log_model,
             "params": {
                 "model_type": "XGBClassifier",
-                "n_estimators": 100,
-                "max_depth": 4,
-                "learning_rate": 0.1,
-                "eval_metric": "logloss",
+                "n_estimators": 500,
+                "max_depth": 6,
+                "learning_rate": 0.05,
+                "subsample": 0.8,
+                "colsample_bytree": 0.8,
+                "objective": "binary:logistic",
+                "eval_metric": "aucpr",
+                "scale_pos_weight": "auto",
                 "random_state": 42,
             },
         },
@@ -231,7 +240,10 @@ def run_training_pipeline(data_path: str = None):
     print("=" * 80)
 
     # 4. Best Model Selection & Probability Calibration
-    best_row = results_df.loc[results_df["roc_auc"].idxmax()]
+    results_sorted = results_df.copy()
+    results_sorted["is_xgb"] = results_sorted["model_name"].apply(lambda x: 1 if "xgboost" in x else 0)
+    results_sorted = results_sorted.sort_values(by=["roc_auc", "f1", "is_xgb"], ascending=[False, False, False])
+    best_row = results_sorted.iloc[0]
     best_model_name = best_row["model_name"]
     uncal_roc_auc = best_row["roc_auc"]
     uncalibrated_best_model = trained_models[best_model_name]
@@ -268,14 +280,14 @@ def run_training_pipeline(data_path: str = None):
 
     # 5. MLflow Model Registry Logging & Transition
     REGISTERED_MODEL_NAME = "fraudguard360-detector"
-    description_note = "trained on real DS_91c85fbe dataset (12 features)"
+    description_note = f"trained on {DATA_SOURCE} dataset ({len(X)} rows, 12 features, XGBoost primary)"
 
     print("\n" + "=" * 60)
     print(f"LOGGING CALIBRATED MODEL TO MLFLOW REGISTRY: '{REGISTERED_MODEL_NAME}'")
     print("=" * 60)
 
     with mlflow.start_run(run_name=f"{best_model_name}_calibrated") as run:
-        mlflow.set_tag("dataset", "real_DS_91c85fbe")
+        mlflow.set_tag("dataset", DATA_SOURCE)
         mlflow.set_tag("dataset_description", description_note)
         mlflow.log_params(
             {
@@ -300,6 +312,10 @@ def run_training_pipeline(data_path: str = None):
         skops_trusted_types = [
             "sklearn.calibration._CalibratedClassifier",
             "sklearn.calibration._SigmoidCalibration",
+            "xgboost.core.Booster",
+            "xgboost.sklearn.XGBClassifier",
+            "lightgbm.sklearn.LGBMClassifier",
+            "lightgbm.basic.Booster",
         ]
 
         mlflow.sklearn.log_model(
@@ -315,7 +331,7 @@ def run_training_pipeline(data_path: str = None):
     latest_version_info = latest_versions[-1]
     version_num = latest_version_info.version
 
-    # Set description and tags noting training on real DS_91c85fbe dataset
+    # Set description and tags noting training dataset details
     try:
         client.update_model_version(
             name=REGISTERED_MODEL_NAME,
@@ -326,7 +342,7 @@ def run_training_pipeline(data_path: str = None):
             name=REGISTERED_MODEL_NAME,
             version=version_num,
             key="dataset",
-            value="real_DS_91c85fbe",
+            value=DATA_SOURCE,
         )
         client.set_model_version_tag(
             name=REGISTERED_MODEL_NAME,

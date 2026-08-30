@@ -3,14 +3,14 @@ import numpy as np
 import pandas as pd
 
 
-def generate_dummy_dataset(n_rows: int = 2000, fraud_ratio: float = 0.15, seed: int = 42) -> pd.DataFrame:
+def generate_dummy_dataset(n_rows: int = 50000, fraud_ratio: float = 0.15, seed: int = 42) -> pd.DataFrame:
     """
     Generates synthetic training data for FraudGuard 360 Fraud Detection ML module.
     Produces all 12 Member 3 canonical features plus ground-truth target label `is_fraud`.
 
     Parameters
     ----------
-    n_rows : int, default=2000
+    n_rows : int, default=50000
         Total number of rows (transaction records) to generate.
     fraud_ratio : float, default=0.15
         Target proportion of fraudulent transactions in the dataset (range 0.0 to 1.0).
