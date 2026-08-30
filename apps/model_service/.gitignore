@@ -2,27 +2,46 @@
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyd
 .Python
+*.egg-info/
+dist/
+build/
+*.egg
 
 # Virtual environments
 venv/
 env/
+.env/
+.venv/
 
-# MLflow runtime (not tracked)
+# MLflow runtime artifacts (not tracked in repo)
 mlruns/
 mlflow.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
 
 # Pytest cache
 .pytest_cache/
 
-# Scratch scripts
+# Scratch / audit scripts (not part of deliverable)
 check_state.py
 final_state_audit.py
 verify_12feature_system.py
 verify_model_consistency.py
-inspect_remote.py
-do_git_commit.py
-git_commit_m4.ps1
+verify_12feature_results.txt
 powershell.cmd
+
+# Data pipeline scratch
 real_data_pipeline.py
 data/
+
+# Compiled artifacts - best_model.joblib IS tracked (pinned demo model)
+# mlflow.db NOT tracked (runtime registry, not repo artifact)

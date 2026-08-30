@@ -27,7 +27,7 @@ import mlflow
 from mlflow.tracking import MlflowClient
 
 import model_loader
-from train import load_data, REAL_FEATURE_COLUMNS
+from train import load_data, REAL_FEATURE_COLUMNS, DEFAULT_DATA_PATH
 
 
 def get_active_model_info(source: str):
@@ -89,8 +89,10 @@ def run_threshold_sweep(
             data_path = "data/features_real.csv"
         elif os.path.exists("data/features_real_DS_91c85fbe.csv"):
             data_path = "data/features_real_DS_91c85fbe.csv"
+        elif os.path.exists(DEFAULT_DATA_PATH):
+            data_path = DEFAULT_DATA_PATH
         else:
-            data_path = "data/features_real.csv"
+            data_path = "dummy_data/train_dummy.csv"
 
     X, y = load_data(data_path)
 

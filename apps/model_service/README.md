@@ -112,11 +112,11 @@ mlflow ui
 ---
 
 ## 6. Model Details
-- **Benchmarked Classifiers**:
-  - Baseline: `LogisticRegression(max_iter=1000)`
-  - XGBoost: `XGBClassifier(n_estimators=100, max_depth=4, learning_rate=0.1)`
-  - LightGBM: `LGBMClassifier(n_estimators=100, max_depth=4, learning_rate=0.1)`
-- **Probability Calibration**: Top candidate selected by ROC AUC is wrapped with `CalibratedClassifierCV(estimator=best_model, method="sigmoid", cv=5)` to output well-calibrated posterior probabilities (Platt Scaling).
+- **Primary & Benchmarked Classifiers**:
+  - Primary Model (Selected): `XGBClassifier(n_estimators=500, max_depth=6, learning_rate=0.05, subsample=0.8, colsample_bytree=0.8, scale_pos_weight=auto, eval_metric="aucpr", objective="binary:logistic")` tuned for imbalanced fraud detection.
+  - Baseline 1: `LogisticRegression(max_iter=1000)`
+  - Baseline 2: `LGBMClassifier(n_estimators=100, max_depth=4, learning_rate=0.1)`
+- **Probability Calibration**: Top candidate selected by ROC AUC (XGBoost) is wrapped with `CalibratedClassifierCV(estimator=best_model, method="sigmoid", cv=5)` to output well-calibrated posterior probabilities (Platt Scaling).
 - **MLflow Model Registry**: Calibrated model registered under `"fraudguard360-detector"` and transitioned to stage `"Staging"` using `MlflowClient`.
 - **Pinned Prototype Model Sourcing**: [model_loader.py](model_loader.py) loads from the MLflow Model Registry (`models:/fraudguard360-detector/Staging`) first, gracefully falling back to local artifact [models/best_model.joblib](models/best_model.joblib). Note that all deployed artifacts represent a **pinned prototype model** / **final demo model** for integration and demonstration.
 
@@ -139,29 +139,21 @@ mlflow ui
 
 ---
 
-## 9. Real Data Validation Findings
+## 9. Data Scaling & XGBoost Model Training Findings
 
-- **Upstream Dataset Escalation & Resolution**:
-  - The original fixture dataset (`DS_7b49892c`) lacked usable fraud signals due to low entity density (946 near-unique customers and no repeat-device graph structure).
-  - This issue was escalated to Member 2, who regenerated the fixture as `DS_91c85fbe`, incorporating realistic repeat-customer/repeat-device transaction histories and a deliberately injected shared-device pattern representing the `MULE_001` attack scenario.
-- **Pipeline Re-Validation**:
-  - Re-running `real_data_pipeline.py` confirmed that all 12 canonical Member 3 features now exhibit meaningful class separation between legitimate and fraudulent transactions.
-  - The strongest predictive signals emerged from graph and velocity metrics: `shared_device_customer_count`, `device_customer_degree`, and `relationship_risk_score`.
-- **Model Training & Registry Promotion**:
-  - The benchmarking pipeline ([train.py](train.py)) was retrained on this real dataset (`data/features_real.csv`, 1,000 rows, 800/200 train/test split across all 12 features) and registered to the MLflow Model Registry as version 3 under `"fraudguard360-detector"`.
-  - **Performance Metrics** (Test Set Evaluation at default 0.5 decision threshold):
-    - **ROC AUC**: `0.9817`
-    - **Precision (Fraud Class)**: `1.0000` (zero false positives)
-    - **Recall (Fraud Class)**: `0.4500`
-    - **Overall Accuracy**: `94.50%`
-- **Class Imbalance & Baseline Benchmarking**:
-  - A naive majority-class baseline (predicting 100% non-fraud) achieves 90.00% accuracy but yields `0.0000` Fraud Recall (0% fraud detection).
-  - The trained model's 94.50% accuracy reflects genuine fraud detection capability (F1 score `0.6207`), confirming performance is not an artifact of class imbalance.
-- **Decision Threshold Tuning Handoff**:
-  - The default `0.5` decision threshold is intentionally conservative (maximizing precision to eliminate false positives).
-  - Operating thresholds (`HIGH_RISK` >= 0.7, `MEDIUM_RISK` >= 0.4) are candidates for joint calibration with Member 5 based on operational cost tradeoffs between false positives and uncaught fraud.
-- **API Contract Migration Notice**:
-  - **Breaking Change**: The REST endpoints (`POST /api/v1/model/predict` and `GET /api/v1/model/explain/{transaction_id}`) now require the full 12-feature schema instead of the earlier 4-field provisional contract. Member 5 must update gateway payloads accordingly prior to production rollout.
+- **Dataset Scaling to 50,000 Rows**:
+  - Scaled dataset generation to 50,000 transaction records maintaining realistic 15% fraud class imbalance (42,500 legitimate / 7,500 fraud transactions).
+  - Preserved the full 12 canonical Member 3 feature schema across velocity, amount deviation, graph network degrees, shared device counts, and relationship risk scores.
+- **Pipeline Validation & Stratified Split**:
+  - Training pipeline ([train.py](train.py)) utilizes an 80/20 stratified split (40,000 train / 10,000 test records, `random_state=42`, `stratify=y`) ensuring consistent fraud representation across train and test sets.
+- **Class-Balanced XGBoost Primary Model**:
+  - Deployed tuned XGBClassifier with class-imbalance aware `scale_pos_weight` ratio (`n_estimators=500`, `max_depth=6`, `learning_rate=0.05`, `eval_metric="aucpr"`).
+  - LogisticRegression retained as a baseline benchmark, with XGBoost consistently achieving top ROC AUC and PR AUC performance.
+- **Probability Calibration & MLflow Model Registry**:
+  - Top XGBoost model is calibrated via Platt Scaling (`CalibratedClassifierCV`) and registered under `"fraudguard360-detector"` in stage `"Staging"`.
+- **API Contract Compatibility**:
+  - Preserved full 12-feature REST API schema contract for `/api/v1/model/predict` and `/api/v1/model/explain/{transaction_id}`.
+
 
 
 
